@@ -1,0 +1,70 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-dark-900 text-slate-100 font-sans antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #1e293b #0f172a;
+  }
+
+  *::-webkit-scrollbar { width: 6px; }
+  *::-webkit-scrollbar-track { background: #0f172a; }
+  *::-webkit-scrollbar-thumb { background-color: #1e293b; border-radius: 3px; }
+}
+
+@layer components {
+  .mono { font-family: 'JetBrains Mono', 'Fira Code', monospace; }
+
+  .glass {
+    @apply bg-white/5 backdrop-blur-sm border border-white/10;
+  }
+
+  .glow-cyan {
+    box-shadow: 0 0 20px rgba(6, 182, 212, 0.15);
+  }
+
+  .phase-dot {
+    @apply w-2 h-2 rounded-full;
+  }
+
+  .status-running {
+    @apply bg-brand-400 animate-pulse;
+  }
+
+  .status-complete {
+    @apply bg-green-400;
+  }
+
+  .status-pending {
+    @apply bg-slate-600;
+  }
+
+  .status-error {
+    @apply bg-red-400;
+  }
+}
+
+/* Scanline overlay for the terminal aesthetic */
+.terminal-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.03) 2px,
+    rgba(0,0,0,0.03) 4px
+  );
+  pointer-events: none;
+}
