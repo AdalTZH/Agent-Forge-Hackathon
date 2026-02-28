@@ -40,7 +40,7 @@ export function NicheInput({ onStart, disabled }) {
 
       {/* Tools row */}
       <div className="flex items-center justify-center gap-3 mb-8">
-        {['Bright Data', 'Acontext', 'ActionBook', 'Claude AI'].map((tool) => (
+        {['Bright Data', 'Acontext', 'ActionBook', 'OpenAI'].map((tool) => (
           <span
             key={tool}
             className="px-2.5 py-1 rounded-md bg-white/5 border border-white/10 text-xs text-slate-400 mono"

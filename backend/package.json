@@ -1,23 +1,24 @@
 {
-  "name": "market-gap-agent-frontend",
+  "name": "market-gap-agent-backend",
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "dev": "nodemon",
+    "start": "node server.js"
   },
   "dependencies": {
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "@acontext/acontext": "*",
+    "@langchain/langgraph": "*",
+    "@modelcontextprotocol/sdk": "*",
+    "@tailwindcss/postcss": "^4.2.1",
+    "cors": "*",
+    "dotenv": "*",
+    "express": "*",
+    "openai": "*",
+    "puppeteer": "*",
+    "uuid": "*"
   },
   "devDependencies": {
-    "@types/react": "^18.3.3",
-    "@types/react-dom": "^18.3.0",
-    "@vitejs/plugin-react": "^4.3.1",
-    "autoprefixer": "^10.4.27",
-    "postcss": "^8.5.6",
-    "tailwindcss": "^3.4.19",
-    "vite": "^5.4.0"
+    "nodemon": "^3.1.14"
   }
 }

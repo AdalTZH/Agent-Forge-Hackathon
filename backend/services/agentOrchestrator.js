@@ -47,9 +47,25 @@ import {
   rankAndSelectProblem,
   analyseCompetitorData,
   generateOpportunityBrief,
+  identifyCompetitors,
 } from './llmService.js';
 
 const TAG = 'Orchestrator(LangGraph)';
+
+// ─────────────────────────────────────────────
+// Emitter side-channel registry
+//
+// LangGraph serialises AgentState for checkpointing and internal message
+// normalisation. Storing a function (emit) directly in state causes a
+// "failed to normalize openai message" crash because functions are not
+// JSON-serialisable. Instead, we keep a plain Map outside the graph —
+// nodes look up their emitter by runId at call time.
+// ─────────────────────────────────────────────
+const emitRegistry = new Map(); // runId → emit(type, data) fn
+
+function getEmit(runId) {
+  return emitRegistry.get(runId) ?? (() => {});
+}
 
 // ─────────────────────────────────────────────
 // 1. Define the LangGraph State
@@ -57,6 +73,7 @@ const TAG = 'Orchestrator(LangGraph)';
 // Annotation.Root creates a typed state schema.
 // Each field's reducer controls how partial updates are merged.
 // Default: last-write wins (replace). For arrays, we accumulate.
+// NOTE: Only plain serialisable values belong here — no functions.
 // ─────────────────────────────────────────────
 const AgentState = Annotation.Root({
   // ── Run metadata ──────────────────────────────────
@@ -80,10 +97,6 @@ const AgentState = Annotation.Root({
   // ── Brief phase (LLM) ─────────────────────────────
   opportunityBrief: Annotation({ reducer: (_, v) => v, default: () => null }),
 
-  // ── Internal: SSE emitter (not serialised) ────────
-  // We store emit as a function reference in state so nodes can fire live events.
-  emit: Annotation({ reducer: (_, v) => v, default: () => () => {} }),
-
   // ── Error tracking ───────────────────────────────
   errors: Annotation({
     reducer: (acc, v) => [...acc, ...v],
@@ -96,7 +109,8 @@ const AgentState = Annotation.Root({
 //    Searches Reddit, scrapes posts, cleans data
 // ─────────────────────────────────────────────
 async function scoutNode(state) {
-  const { niche, sessionId, emit } = state;
+  const { niche, sessionId, runId } = state;
+  const emit = getEmit(runId);
   logger.phase('SCOUT');
   emit('phase_start', { phase: 'scout', message: 'Phase 1: Scouting Reddit for pain points…' });
 
@@ -145,7 +159,8 @@ async function scoutNode(state) {
 //    Extracts pain points, ranks, writes to Disk
 // ─────────────────────────────────────────────
 async function brainNode(state) {
-  const { niche, sessionId, rawPosts, emit } = state;
+  const { niche, sessionId, rawPosts, runId } = state;
+  const emit = getEmit(runId);
   logger.phase('BRAIN');
   emit('phase_start', { phase: 'brain', message: 'Phase 2: Analysing pain points and identifying top problem…' });
 
@@ -205,7 +220,8 @@ async function brainNode(state) {
 //    Navigates competitors, takes screenshots, confirms gap
 // ─────────────────────────────────────────────
 async function validateNode(state) {
-  const { sessionId, topProblem, emit } = state;
+  const { niche, sessionId, topProblem, runId } = state;
+  const emit = getEmit(runId);
   logger.phase('VALIDATE');
   emit('phase_start', { phase: 'validate', message: 'Phase 3: Verifying competitor gaps with ActionBook…' });
 
@@ -219,9 +235,31 @@ async function validateNode(state) {
   try {
     const targetKeyword = topProblem?.gap_keyword ?? '';
 
+    // ── Identify niche-specific competitors via LLM ───────────────────────
+    // This replaces the hardcoded Buffer/Later/Notion list with products that
+    // are actually relevant to the niche the user typed in.
+    emit('phase_log', {
+      phase: 'validate',
+      message: `Identifying real competitors for "${niche}" niche…`,
+    });
+
+    const dynamicCompetitors = await identifyCompetitors(niche, topProblem);
+
+    if (dynamicCompetitors) {
+      emit('competitors_identified', {
+        competitors: dynamicCompetitors.map((c) => c.name),
+        message: `Competitors identified: ${dynamicCompetitors.map((c) => c.name).join(', ')}`,
+      });
+    } else {
+      emit('phase_log', {
+        phase: 'validate',
+        message: 'Competitor identification failed — using default competitors as fallback',
+      });
+    }
+
     competitorResults = await verifyAllCompetitors(targetKeyword, (type, data) => {
       emit(type, data);
-    });
+    }, dynamicCompetitors);
 
     // Bright Data fallback for any competitor Puppeteer couldn't access
     for (const result of competitorResults) {
@@ -268,7 +306,8 @@ async function validateNode(state) {
 // 5. Node: briefNode — LLM synthesis + Acontext final Disk write
 // ─────────────────────────────────────────────
 async function briefNode(state) {
-  const { niche, sessionId, painPoints, topProblem, gapAnalysis, competitorResults, emit } = state;
+  const { niche, sessionId, painPoints, topProblem, gapAnalysis, competitorResults, runId } = state;
+  const emit = getEmit(runId);
   logger.phase('BRIEF');
   emit('phase_start', { phase: 'brief', message: 'Phase 4: Generating Opportunity Brief…' });
 
@@ -382,6 +421,12 @@ async function runGraph(runId, niche, emitter) {
   try {
     emit('run_start', { niche, message: `Agent starting for niche: "${niche}"` });
 
+    // ── Register emit in side-channel so nodes can fire SSE events ───────
+    // Functions are not JSON-serialisable and must never live in LangGraph
+    // state — the graph normalises state as OpenAI messages and will throw
+    // "failed to normalize openai message" if a function is present.
+    emitRegistry.set(runId, emit);
+
     // ── Bootstrap Acontext context before graph starts ──────────────────
     session = await createSession(niche);
     space = await createLearningSpace(niche, session.id);
@@ -402,14 +447,13 @@ async function runGraph(runId, niche, emitter) {
     });
 
     // ── Invoke the compiled LangGraph ────────────────────────────────────
-    // The initial state seeds the graph. Each node mutates and returns
-    // a partial update; LangGraph merges them into the running state.
+    // Only plain serialisable values are passed in state.
+    // Nodes retrieve their emitter via emitRegistry.get(runId).
     const finalState = await graph.invoke({
       runId,
       niche,
       sessionId: session.id,
       spaceId: space?.id ?? null,
-      emit, // nodes access this from state.emit
     });
 
     logger.success(TAG, `Graph completed for run ${runId}`);
@@ -433,6 +477,7 @@ async function runGraph(runId, niche, emitter) {
     emit('done', { runId, message: 'Run ended with errors' });
     activeRuns.set(runId, { ...activeRuns.get(runId), status: 'error' });
   } finally {
+    emitRegistry.delete(runId); // cleanup: functions must not linger in memory
     await closeBrightData().catch(() => {});
   }
 }

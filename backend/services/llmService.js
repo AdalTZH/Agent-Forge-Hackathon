@@ -152,7 +152,18 @@ Return a JSON object:
   "market_entry_angle": "how to position against these competitors"
 }`;
 
-  const user = `Top problem: "${topProblem?.top_problem}"\nGap keyword: "${topProblem?.gap_keyword}"\n\nCompetitor data:\n${JSON.stringify(competitorResults, null, 2)}`;
+  // Strip screenshots and truncate scraped content to prevent context overflow.
+  // Screenshots are base64 and can be hundreds of KB each. Notes + scrapedContent
+  // from Puppeteer can also be many KB — cap at 800 chars per competitor.
+  const safeResults = competitorResults.map(({ screenshot, scrapedContent, notes, ...rest }) => ({
+    ...rest,
+    notes: typeof notes === 'string' ? notes.slice(0, 800) : notes,
+    ...(scrapedContent ? { scrapedContent: scrapedContent.slice(0, 800) } : {}),
+  }));
+
+  const user = `Top problem: "${topProblem?.top_problem}"\nGap keyword: "${topProblem?.gap_keyword}"\n\nCompetitor data:\n${JSON.stringify(safeResults, null, 2)}`;
+
+  logger.info(TAG, `analyseCompetitorData payload: ~${Math.round(user.length / 4)} tokens estimated`);
 
   const raw = await callGPT(system, user, 1000);
   const parsed = safeJsonParse(raw);
@@ -211,6 +222,81 @@ Sample Pain Points: ${JSON.stringify(painPoints.slice(0, 5))}`;
   logger.success(TAG, `Brief: "${parsed.headline}"`);
   return parsed;
 }
+
+// ─────────────────────────────────────────────
+// SKILL BLOCK 5: Identify Niche-Specific Competitors
+// ─────────────────────────────────────────────
+
+/**
+ * Ask GPT-4o to identify the top 3 direct competitors for the given niche
+ * and top problem. Returns a competitor config array compatible with the
+ * checkCompetitorGap() function signature.
+ *
+ * This replaces the hardcoded COMPETITOR_TARGETS constant so that every niche
+ * gets a relevant set of products checked — not always Buffer/Later/Notion.
+ *
+ * @param {string} niche
+ * @param {Object|null} topProblem - { top_problem, gap_keyword }
+ * @returns {Array<{ name, pricingUrl, featuresUrl, backup }>|null}
+ */
+export async function identifyCompetitors(niche, topProblem) {
+  logger.info(TAG, 'Skill Block 5: identifyCompetitors');
+
+  const system = `You are a competitive intelligence researcher.
+Your job: identify the 3 most relevant DIRECT competitors that users in the given niche already use to solve their top problem.
+
+Rules:
+- Pick tools/products/apps that are widely used in this specific niche right now.
+- Do NOT pick generic tools (e.g. Excel, Google Docs) unless they are the actual dominant solution in that niche.
+- Prefer tools that have public pricing and features pages.
+- Use real, currently-active products with real URLs you are confident exist.
+
+Return a JSON object:
+{
+  "competitors": [
+    {
+      "name": "Exact Product Name",
+      "pricingUrl": "https://exactdomain.com/pricing",
+      "featuresUrl": "https://exactdomain.com/features",
+      "backup": "https://exactdomain.com"
+    }
+  ]
+}`;
+
+  const user = `Niche: "${niche}"
+Top Problem: "${topProblem?.top_problem ?? 'not yet identified'}"
+Gap Keyword: "${topProblem?.gap_keyword ?? ''}"`;
+
+  try {
+    const raw = await callGPT(system, user, 800);
+    const parsed = safeJsonParse(raw);
+
+    if (!parsed?.competitors || !Array.isArray(parsed.competitors) || parsed.competitors.length === 0) {
+      logger.warn(TAG, 'identifyCompetitors: unexpected format — falling back to defaults');
+      return null;
+    }
+
+    // Ensure every entry has the required fields (guard against partial GPT output)
+    const valid = parsed.competitors.filter(
+      (c) => c.name && c.pricingUrl && c.featuresUrl
+    );
+
+    if (valid.length === 0) {
+      logger.warn(TAG, 'identifyCompetitors: all entries missing required fields');
+      return null;
+    }
+
+    logger.success(TAG, `Identified competitors: ${valid.map((c) => c.name).join(', ')}`);
+    return valid;
+  } catch (err) {
+    logger.warn(TAG, `identifyCompetitors failed (non-fatal): ${err.message}`);
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────
+// SKILL BLOCK 6: Clean and filter raw posts
+// ─────────────────────────────────────────────
 
 /**
  * Clean raw post list before Acontext storage.

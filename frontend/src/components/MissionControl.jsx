@@ -2,9 +2,9 @@ const PHASE_ORDER = ['scout', 'brain', 'validate', 'brief', 'complete'];
 
 const PHASE_META = {
   scout: { label: 'Scout', icon: '🔍', color: 'text-sky-400', bg: 'bg-sky-400/10 border-sky-400/20', tool: 'Bright Data' },
-  brain: { label: 'Brain', icon: '🧠', color: 'text-violet-400', bg: 'bg-violet-400/10 border-violet-400/20', tool: 'Acontext + Claude' },
+  brain: { label: 'Brain', icon: '🧠', color: 'text-violet-400', bg: 'bg-violet-400/10 border-violet-400/20', tool: 'Acontext + OpenAI' },
   validate: { label: 'Validate', icon: '🔬', color: 'text-amber-400', bg: 'bg-amber-400/10 border-amber-400/20', tool: 'ActionBook + Puppeteer' },
-  brief: { label: 'Brief', icon: '📄', color: 'text-green-400', bg: 'bg-green-400/10 border-green-400/20', tool: 'Claude AI' },
+  brief: { label: 'Brief', icon: '📄', color: 'text-green-400', bg: 'bg-green-400/10 border-green-400/20', tool: 'OpenAI GPT-4o' },
   complete: { label: 'Complete', icon: '✅', color: 'text-green-400', bg: 'bg-green-400/10 border-green-400/20', tool: '' },
 };
 

@@ -51,11 +51,10 @@ export async function createSession(niche) {
   logger.success(TAG, `Session created: ${session.id} for niche "${niche}"`);
 
   // Store the initial system context as the first message
+  // SDK signature: storeMessage(sessionId, blob, options?) — blob is the message directly (OpenAI format by default)
   await client.sessions.storeMessage(session.id, {
-    blob: {
-      role: 'user',
-      content: `Agent run started. Niche: "${niche}". Task: Discover market gaps and validate them against competitor offerings.`,
-    },
+    role: 'user',
+    content: `Agent run started. Niche: "${niche}". Task: Discover market gaps and validate them against competitor offerings.`,
   });
 
   return session;
@@ -67,8 +66,10 @@ export async function createSession(niche) {
  */
 export async function storeMessage(sessionId, role, content) {
   const client = getClient();
+  // blob is passed directly as the 2nd arg — no {blob:} wrapper
   await client.sessions.storeMessage(sessionId, {
-    blob: { role, content: typeof content === 'string' ? content : JSON.stringify(content) },
+    role,
+    content: typeof content === 'string' ? content : JSON.stringify(content),
   });
 }
 
@@ -88,8 +89,9 @@ export async function getMessages(sessionId) {
 export async function flushAndSummarise(sessionId) {
   const client = getClient();
   await client.sessions.flush(sessionId);
-  const summary = await client.sessions.getSessionSummary({ sessionId });
-  logger.success(TAG, `Session ${sessionId} flushed. Summary:`, summary?.summary?.slice?.(0, 80));
+  // SDK signature: getSessionSummary(sessionId: string, options?) — pass sessionId directly
+  const summary = await client.sessions.getSessionSummary(sessionId);
+  logger.success(TAG, `Session ${sessionId} flushed. Summary:`, summary?.slice?.(0, 80));
   return summary;
 }
 
@@ -115,10 +117,8 @@ export async function writeReport(sessionId, reportData) {
   // Also persist to the session so judges can see it in Acontext dashboard
   const client = getClient();
   await client.sessions.storeMessage(sessionId, {
-    blob: {
-      role: 'assistant',
-      content: `[DISK:market_gap_report] ${JSON.stringify(reportStore.get(sessionId))}`,
-    },
+    role: 'assistant',
+    content: `[DISK:market_gap_report] ${JSON.stringify(reportStore.get(sessionId))}`,
   });
 
   logger.success(TAG, `Disk updated for session ${sessionId}`);

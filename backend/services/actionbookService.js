@@ -271,11 +271,23 @@ function buildGapNotes(gaps, name, keyword) {
 }
 
 /**
- * Run the full competitor verification loop (max 3 competitors).
+ * Run the full competitor verification loop.
+ *
+ * @param {string}   targetKeyword   - Gap keyword derived from the top pain point
+ * @param {Function} emitEvent       - SSE emitter
+ * @param {Array}    [competitors]   - Dynamic list from identifyCompetitors().
+ *                                    Falls back to COMPETITOR_TARGETS when null/empty
+ *                                    so the system degrades gracefully.
  */
-export async function verifyAllCompetitors(targetKeyword, emitEvent) {
+export async function verifyAllCompetitors(targetKeyword, emitEvent, competitors = null) {
+  // Use dynamic competitors if provided and valid, otherwise fall back to defaults
+  const targets =
+    Array.isArray(competitors) && competitors.length > 0
+      ? competitors
+      : COMPETITOR_TARGETS;
+
   const results = [];
-  for (const competitor of COMPETITOR_TARGETS) {
+  for (const competitor of targets) {
     const result = await checkCompetitorGap(competitor, targetKeyword, emitEvent);
     results.push(result);
   }
