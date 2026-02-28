@@ -130,12 +130,19 @@ export function useAgentStream() {
       case 'done':
         setStatus('complete');
         addLog({ level: 'success', phase: 'done', message: `Run complete in ${((event.durationMs ?? 0) / 1000).toFixed(1)}s` });
+        // Close the SSE connection — prevents browser EventSource from auto-reconnecting
+        // and replaying report_ready + done on every reconnect attempt.
+        eventSourceRef.current?.close();
+        eventSourceRef.current = null;
         break;
 
       case 'error':
         setStatus('error');
         setError(event.message);
         addLog({ level: 'error', phase: 'error', message: event.message });
+        // Close SSE on error too — same reconnect-loop prevention.
+        eventSourceRef.current?.close();
+        eventSourceRef.current = null;
         break;
 
       default:

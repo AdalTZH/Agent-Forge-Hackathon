@@ -65,26 +65,31 @@ function App() {
 
         {/* Main content grid */}
         {status !== 'idle' && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Left column - Mission Control & Agent Log */}
-            <div className="lg:col-span-1 space-y-6">
-              <MissionControl
-                sessionId={sessionId}
-                spaceId={spaceId}
-                currentPhase={currentPhase}
-                taskBlocks={taskBlocks}
-                stats={stats}
-                topProblem={topProblem}
-                gapAnalysis={gapAnalysis}
-              />
-              <AgentLog logs={logs} status={status} />
+          <div className="space-y-6">
+            {/* Top two-column grid — Mission Control + Browser Feed */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Left column - Mission Control */}
+              <div className="lg:col-span-1 space-y-6">
+                <MissionControl
+                  sessionId={sessionId}
+                  spaceId={spaceId}
+                  currentPhase={currentPhase}
+                  taskBlocks={taskBlocks}
+                  stats={stats}
+                  topProblem={topProblem}
+                  gapAnalysis={gapAnalysis}
+                />
+              </div>
+
+              {/* Right column - Browser Feed & Report */}
+              <div className="lg:col-span-2 space-y-6">
+                <BrowserFeed feed={browserFeed} />
+                <ReportView report={report} screenshots={screenshots} />
+              </div>
             </div>
 
-            {/* Right column - Browser Feed & Report */}
-            <div className="lg:col-span-2 space-y-6">
-              <BrowserFeed feed={browserFeed} />
-              <ReportView report={report} screenshots={screenshots} />
-            </div>
+            {/* Full-width Agent Log — below Mission Control and Browser Feed */}
+            <AgentLog logs={logs} status={status} />
           </div>
         )}
       </div>

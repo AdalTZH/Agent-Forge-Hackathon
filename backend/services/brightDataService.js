@@ -44,21 +44,27 @@ const MCP_GROUPS = [
 // ─────────────────────────────────────────────
 
 /**
- * Search Reddit's public JSON API for posts about a niche.
+ * Search Reddit's public JSON API for pain-point posts about a niche.
  *
- * Uses three complementary query variants (problem / frustration / pain)
- * to get broad, signal-rich coverage. Returns posts with title, url,
- * snippet (selftext preview), and full content for LLM extraction.
+ * Key search decisions:
+ *   - `type=self`  → only text posts (self posts have actual body content in
+ *                    selftext; link posts have no body and were causing 0 pain
+ *                    points to be extracted)
+ *   - `self:1`     → redundant safety: Reddit query modifier for self posts
+ *   - `sort=top`   → highest-upvoted = most resonant = strongest pain signal
+ *   - `t=year`     → last 12 months — recent, relevant pain points only
+ *   - score >= 3   → filter throwaway posts; real pain posts get upvotes
  *
  * @param {string} niche - The market niche to search
  * @param {number} maxPosts - Max posts to return (default 25)
  * @returns {Promise<Array<{url, title, snippet, content}>>}
  */
 export async function searchRedditJSON(niche, maxPosts = 25) {
+  // Use quoted niche + pain signal terms — quotes force exact match of the niche
   const queries = [
-    `${niche} problem frustrating struggling`,
-    `${niche} wish annoying hate`,
-    `${niche} pain issue broken`,
+    `"${niche}" problem OR frustrated OR struggling self:1`,
+    `"${niche}" wish OR annoying OR hate self:1`,
+    `"${niche}" difficult OR broken OR missing self:1`,
   ];
 
   const REDDIT_HEADERS = {
@@ -72,11 +78,12 @@ export async function searchRedditJSON(niche, maxPosts = 25) {
   for (const query of queries) {
     if (results.length >= maxPosts) break;
 
-    const url = `https://www.reddit.com/search.json?q=${encodeURIComponent(query)}&sort=relevance&t=year&limit=25&type=link`;
+    // type=self → text posts only (have selftext body, not just external links)
+    const searchUrl = `https://www.reddit.com/search.json?q=${encodeURIComponent(query)}&sort=top&t=year&limit=25&type=self`;
     logger.info(TAG, `Reddit JSON API query: "${query}"`);
 
     try {
-      const res = await fetch(url, { headers: REDDIT_HEADERS });
+      const res = await fetch(searchUrl, { headers: REDDIT_HEADERS });
 
       if (!res.ok) {
         logger.warn(TAG, `Reddit JSON API HTTP ${res.status} for: "${query}"`);
@@ -86,8 +93,13 @@ export async function searchRedditJSON(niche, maxPosts = 25) {
       const data = await res.json();
       const children = data?.data?.children ?? [];
 
+      let added = 0;
       for (const { data: post } of children) {
         if (!post?.permalink) continue;
+
+        // Skip low-signal posts: deleted, removed, or very low score
+        if (post.score < 3) continue;
+        if (post.selftext === '[deleted]' || post.selftext === '[removed]') continue;
 
         const postUrl = `https://www.reddit.com${post.permalink}`.split('?')[0];
         if (seen.has(postUrl)) continue;
@@ -98,10 +110,14 @@ export async function searchRedditJSON(niche, maxPosts = 25) {
           title: post.title ?? '',
           snippet: truncate((post.selftext ?? '').trim(), 300),
           content: truncate((post.selftext ?? '').trim(), 2000),
+          score: post.score,
+          subreddit: post.subreddit,
+          num_comments: post.num_comments,
         });
+        added++;
       }
 
-      logger.success(TAG, `Reddit JSON API: ${results.length} posts after query "${query}"`);
+      logger.success(TAG, `Reddit JSON API: ${added} new posts (total ${results.length}) for "${query}"`);
 
       // Polite delay between requests — Reddit allows ~60 req/min unauthenticated
       if (results.length < maxPosts) await new Promise((r) => setTimeout(r, 600));
